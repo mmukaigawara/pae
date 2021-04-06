@@ -1,0 +1,1338 @@
+---
+title: "PAE Final Report Figures and Tables"
+author: "Mitsuru Mukaigawara"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.pos = "!H", out.extra = "")
+
+# Packages ---
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(ggthemes)
+library(readr)
+library(stargazer)
+library(lubridate)
+library(knitr)
+library(lfe)
+library(kableExtra)
+library(rddensity)
+library(ggmap)
+library(gridExtra)
+
+# Dataset ---
+
+## Main datasets from ACLED
+acled <- read_csv("2019-01-01-2020-08-01-Caucasus_and_Central_Asia-Eastern_Africa-Middle_Africa-Middle_East-Northern_Africa-Southeast_Asia-Southern_Africa-Western_Africa.csv") #2019-2020
+fcv_acled_list <- c("Burkina Faso", "Cameroon", "Central African Republic", "Democratic Republic of Congo",
+                    "Republic of Congo", "Iraq", "Niger", "Nigeria", "Somalia", "South Sudan", "Sudan",
+                    "Syria", "Libya", "Mali", "Burundi", "Yemen", "Afghanistan", "Chad", "Mozambique", "Myanmar"
+                    )
+acled_fcv <- acled %>%
+    subset(country %in% fcv_acled_list) #Subset FCV states
+
+acled_nigeria_2018 <- read_csv("2018-01-01-2018-07-31-Nigeria.csv") #VAC in Nigeria
+acled_nigeria_2017 <- read_csv("2017-01-01-2017-07-31-Nigeria.csv")
+acled_nigeria_2016 <- read_csv("2016-01-01-2016-07-31-Nigeria.csv")
+acled_nigeria_2015 <- read_csv("2015-01-01-2015-07-31-Nigeria.csv")
+acled_nigeria_2014 <- read_csv("2014-01-01-2014-07-31-Nigeria.csv")
+acled_nigeria_2013 <- read_csv("2013-01-01-2013-07-31-Nigeria.csv")
+acled_nigeria_2012 <- read_csv("2012-01-01-2012-07-31-Nigeria.csv")
+acled_nigeria_2011 <- read_csv("2011-01-01-2011-07-31-Nigeria.csv")
+acled_nigeria_2010 <- read_csv("2010-01-01-2010-07-31-Nigeria.csv")
+acled_nigeria_2009 <- read_csv("2009-01-01-2009-07-31-Nigeria.csv")
+acled_nigeria_2008 <- read_csv("2008-01-01-2008-07-31-Nigeria.csv")
+acled_nigeria_2007 <- read_csv("2007-01-01-2007-07-31-Nigeria.csv")
+acled_nigeria_2006 <- read_csv("2006-01-01-2006-07-31-Nigeria.csv")
+acled_nigeria_2005 <- read_csv("2005-01-01-2005-07-31-Nigeria.csv")
+acled_nigeria_2004 <- read_csv("2004-01-01-2004-07-31-Nigeria.csv")
+acled_nigeria_2003 <- read_csv("2003-01-01-2003-07-31-Nigeria.csv")
+acled_nigeria_2002 <- read_csv("2002-01-01-2002-07-31-Nigeria.csv")
+acled_nigeria_2001 <- read_csv("2001-01-01-2001-07-31-Nigeria.csv")
+acled_nigeria_2000 <- read_csv("2000-01-01-2000-07-31-Nigeria.csv")
+
+## Dataset for the McCrary tests
+nigeria_rainfall <- read_csv("nigeria_rainfall.csv")
+nigeria_other_violence <- read_csv("2020-01-01-2020-07-31-Nigeria.csv")
+nigeria_ebola <- read_csv("2014-01-01-2021-12-31-Nigeria.csv")
+
+```
+
+# Note
+
+This rmarkdown document is a replication code for the figures in the PAE final report. The replication code for following figures and tables are included in this file. (Note: The maps of violence against civilians were finalized with the ArcGIS. Also, the results of the case study were finalized with the Apple's Keynote.)
+
+- Methodology
+  - Figure: Trend of violence in fragile states
+
+- Results
+  - Figure: Mapping of violence against civilians (COVID)
+  - Figure: Mapping of violence against civilians (Ebola)
+  - Figure: Case study (motivation of ethnic militias)
+
+- Appendix. Difference-in-discontinuities
+  - Table: Regression results
+  - Figure: Regression results
+  - Figure: McCrary test results
+  - Figure: Trends in other years
+  - Figure: Permutation tests
+
+The main data are downloadable from the ACLED website (requires registration). To perform a replication analysis, please download the following datasets from the ACLED website with the following restrictions:
+
+- Data for years 2019-2020
+  - Date: 2019-01-01-2020-08-01
+  - Region: Caucasus and Central Asia, Eastern Africa, Middle Africa, Middle East, Northern Africa, Southeast Asia, Southern Africa, or Western Africa
+- Data for year 2018
+  - Date: 2018-01-01-2018-07-31
+  - Country: Nigeria
+- Data for years 2017-2000 (Use similar restrictions as 2018. Contact the ACLED to obtain the full access to old data.)
+- Data for other types of violence
+  - Date: 2020-01-01-2020-07-31
+  - Region: Nigeria
+  - Types of violence: exclude violence against civilians
+- Data for Ebola
+  - Date: 2014-01-01-2020-07-31
+  - Region: Nigeria
+- Data for precipitation (available in the repository)
+
+# Data cleaning
+
+```{r data clearning}
+
+# Data cleaning ---
+acled_fcv_nigeria <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Nigeria")
+
+acled_fcv_nigeria_national <- acled_fcv_nigeria %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Year 2020 ---
+acled_fcv_nigeria_national <- acled_fcv_nigeria_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_nigeria_national_2020 <- acled_fcv_nigeria_national %>%
+  subset(year == 2020)
+
+acled_fcv_nigeria_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_nigeria_national_2020
+
+acled_fcv_nigeria_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_nigeria_national_2020_weekly
+
+acled_fcv_nigeria_national_2020_weekly <- acled_fcv_nigeria_national_2020_weekly %>%
+  mutate(dead = week >= 13) #Categorical variable
+
+# Setting week 13 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_nigeria_national_2020_weekly <- acled_fcv_nigeria_national_2020_weekly %>%
+  mutate(week = week - 13) %>%
+  subset(week < 13)
+
+# Year 2019 ---
+acled_fcv_nigeria <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Nigeria")
+
+acled_fcv_nigeria_national <- acled_fcv_nigeria %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) #National daily incidents
+
+acled_fcv_nigeria_national <- acled_fcv_nigeria_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_nigeria_national_2019 <- acled_fcv_nigeria_national %>%
+  subset(year == 2019) #Year 2019
+
+acled_fcv_nigeria_national_2019 %>%
+  select(year, week, incident_daily) %>%
+  distinct() -> acled_fcv_nigeria_national_2019
+
+acled_fcv_nigeria_national_2019 %>%
+  group_by(week) %>%
+  mutate(incident_weekly_ave = (sum(incident_daily))/7) %>%
+  select(year, week, incident_weekly_ave) %>%
+  distinct() -> acled_fcv_nigeria_national_2019_weekly
+
+# Setting week 13 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_nigeria_national_2019_weekly <- acled_fcv_nigeria_national_2019_weekly %>%
+  mutate(week = week - 13) %>%
+  subset(week < 13) %>%
+  mutate(dead = week >= 0) #Categorical variable before and after the first COVID death
+
+# Years 2000-2018 ---
+
+cleaning <- function(dataset){
+  # Cleaning
+  dataset_modified <- dataset %>% 
+    mutate(incident = 1) %>% #Incident = 1 for each row
+    mutate(event_date = as.Date(event_date, "%d %B %Y"))
+  
+  dataset_modified <- dataset_modified %>%
+    group_by(event_date) %>%
+    mutate(incident_daily = sum(incident)) #National daily incidents
+
+  # Weekly average
+  dataset_modified <- dataset_modified %>%
+    mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+  dataset_modified %>%
+    select(year, week, incident_daily) %>%
+    distinct() -> dataset_modified
+
+  dataset_modified %>%
+    group_by(week) %>%
+    mutate(incident_weekly_ave = (sum(incident_daily))/7) %>%
+    select(year, week, incident_weekly_ave) %>%
+    distinct() -> dataset_modified
+
+  # Setting week 13 as week 0
+  dataset_modified <- dataset_modified %>%
+    mutate(week = week - 13) %>%
+    subset(week < 13) %>%
+    mutate(dead = week >= 0)
+  
+  return(dataset_modified)
+}
+
+acled_fcv_nigeria_national_2018_weekly <- cleaning(acled_nigeria_2018)
+acled_fcv_nigeria_national_2017_weekly <- cleaning(acled_nigeria_2017)
+acled_fcv_nigeria_national_2016_weekly <- cleaning(acled_nigeria_2016)
+acled_fcv_nigeria_national_2015_weekly <- cleaning(acled_nigeria_2015)
+acled_fcv_nigeria_national_2014_weekly <- cleaning(acled_nigeria_2014)
+acled_fcv_nigeria_national_2013_weekly <- cleaning(acled_nigeria_2013)
+acled_fcv_nigeria_national_2012_weekly <- cleaning(acled_nigeria_2012)
+acled_fcv_nigeria_national_2011_weekly <- cleaning(acled_nigeria_2011)
+acled_fcv_nigeria_national_2010_weekly <- cleaning(acled_nigeria_2010)
+acled_fcv_nigeria_national_2009_weekly <- cleaning(acled_nigeria_2009)
+acled_fcv_nigeria_national_2008_weekly <- cleaning(acled_nigeria_2008)
+acled_fcv_nigeria_national_2007_weekly <- cleaning(acled_nigeria_2007)
+acled_fcv_nigeria_national_2006_weekly <- cleaning(acled_nigeria_2006)
+acled_fcv_nigeria_national_2005_weekly <- cleaning(acled_nigeria_2005)
+acled_fcv_nigeria_national_2004_weekly <- cleaning(acled_nigeria_2004)
+acled_fcv_nigeria_national_2003_weekly <- cleaning(acled_nigeria_2003)
+acled_fcv_nigeria_national_2002_weekly <- cleaning(acled_nigeria_2002)
+acled_fcv_nigeria_national_2001_weekly <- cleaning(acled_nigeria_2001)
+acled_fcv_nigeria_national_2000_weekly <- cleaning(acled_nigeria_2000)
+
+```
+
+# Methodology
+
+## Figure: Violence against civilians in fragile states
+
+```{r fragile states}
+
+# Mali ---
+
+# Data cleaning
+acled_fcv_mali <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Mali")
+
+acled_fcv_mali_national <- acled_fcv_mali %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Weekly average, 2020
+acled_fcv_mali_national <- acled_fcv_mali_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_mali_national_2020 <- acled_fcv_mali_national %>%
+  subset(year == 2020)
+
+acled_fcv_mali_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_mali_national_2020
+
+acled_fcv_mali_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_mali_national_2020_weekly
+
+acled_fcv_mali_national_2020_weekly <- acled_fcv_mali_national_2020_weekly %>%
+  mutate(dead = week >= 14) #Categorical variable
+
+# Setting week 14 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_mali_national_2020_weekly <- acled_fcv_mali_national_2020_weekly %>%
+  mutate(week = week - 14) %>%
+  subset(week < 14)
+
+# Afghanistan ---
+
+# Data cleaning
+acled_fcv_afghanistan <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Afghanistan")
+
+acled_fcv_afghanistan_national <- acled_fcv_afghanistan %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Weekly average, 2020
+acled_fcv_afghanistan_national <- acled_fcv_afghanistan_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_afghanistan_national_2020 <- acled_fcv_afghanistan_national %>%
+  subset(year == 2020)
+
+acled_fcv_afghanistan_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_afghanistan_national_2020
+
+acled_fcv_afghanistan_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_afghanistan_national_2020_weekly
+
+acled_fcv_afghanistan_national_2020_weekly <- acled_fcv_afghanistan_national_2020_weekly %>%
+  mutate(dead = week >= 13) #Categorical variable
+
+# Setting week 13 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_afghanistan_national_2020_weekly <- acled_fcv_afghanistan_national_2020_weekly %>%
+  mutate(week = week - 13) %>%
+  subset(week < 13)
+
+# Somalia ---
+
+# Data cleaning
+acled_fcv_somalia <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Somalia")
+
+acled_fcv_somalia_national <- acled_fcv_somalia %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Weekly average, 2020
+acled_fcv_somalia_national <- acled_fcv_somalia_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_somalia_national_2020 <- acled_fcv_somalia_national %>%
+  subset(year == 2020)
+
+acled_fcv_somalia_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_somalia_national_2020
+
+acled_fcv_somalia_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_somalia_national_2020_weekly
+
+acled_fcv_somalia_national_2020_weekly <- acled_fcv_somalia_national_2020_weekly %>%
+  mutate(dead = week >= 16) #Categorical variable
+
+# Setting week 16 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_somalia_national_2020_weekly <- acled_fcv_somalia_national_2020_weekly %>%
+  mutate(week = week - 16) %>%
+  subset(week < 16)
+
+# Syria ---
+
+# Data cleaning
+acled_fcv_syria <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Syria")
+
+acled_fcv_syria_national <- acled_fcv_syria %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Weekly average, 2020
+acled_fcv_syria_national <- acled_fcv_syria_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_syria_national_2020 <- acled_fcv_syria_national %>%
+  subset(year == 2020)
+
+acled_fcv_syria_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_syria_national_2020
+
+acled_fcv_syria_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_syria_national_2020_weekly
+
+acled_fcv_syria_national_2020_weekly <- acled_fcv_syria_national_2020_weekly %>%
+  mutate(dead = week >= 14) #Categorical variable
+
+# Setting week 14 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_syria_national_2020_weekly <- acled_fcv_syria_national_2020_weekly %>%
+  mutate(week = week - 14) %>%
+  subset(week < 14)
+
+# DRC ---
+
+# Data cleaning
+acled_fcv_drc <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Democratic Republic of Congo")
+
+acled_fcv_drc_national <- acled_fcv_drc %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Weekly average, 2020
+acled_fcv_drc_national <- acled_fcv_drc_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_drc_national_2020 <- acled_fcv_drc_national %>%
+  subset(year == 2020)
+
+acled_fcv_drc_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_drc_national_2020
+
+acled_fcv_drc_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_drc_national_2020_weekly
+
+acled_fcv_drc_national_2020_weekly <- acled_fcv_drc_national_2020_weekly %>%
+  mutate(dead = week >= 13) #Categorical variable
+
+# Setting week 13 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_drc_national_2020_weekly <- acled_fcv_drc_national_2020_weekly %>%
+  mutate(week = week - 13) %>%
+  subset(week < 13)
+
+# Yemen ---
+
+# Data cleaning
+acled_fcv_yemen <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Yemen")
+
+acled_fcv_yemen_national <- acled_fcv_yemen %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Weekly average, 2020
+acled_fcv_yemen_national <- acled_fcv_yemen_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_yemen_national_2020 <- acled_fcv_yemen_national %>%
+  subset(year == 2020)
+
+acled_fcv_yemen_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_yemen_national_2020
+
+acled_fcv_yemen_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_yemen_national_2020_weekly
+
+acled_fcv_yemen_national_2020_weekly <- acled_fcv_yemen_national_2020_weekly %>%
+  mutate(dead = week >= 19) #Categorical variable
+
+# Setting week 19 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_yemen_national_2020_weekly <- acled_fcv_yemen_national_2020_weekly %>%
+  mutate(week = week - 19) %>%
+  subset(week < 19)
+
+# Burkina Faso ---
+
+# Data cleaning
+acled_fcv_burkinafaso <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Burkina Faso")
+
+acled_fcv_burkinafaso_national <- acled_fcv_burkinafaso %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Weekly average, 2020
+acled_fcv_burkinafaso_national <- acled_fcv_burkinafaso_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_burkinafaso_national_2020 <- acled_fcv_burkinafaso_national %>%
+  subset(year == 2020)
+
+acled_fcv_burkinafaso_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_burkinafaso_national_2020
+
+acled_fcv_burkinafaso_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_burkinafaso_national_2020_weekly
+
+acled_fcv_burkinafaso_national_2020_weekly <- acled_fcv_burkinafaso_national_2020_weekly %>%
+  mutate(dead = week >= 13) #Categorical variable
+
+# Setting week 13 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_burkinafaso_national_2020_weekly <- acled_fcv_burkinafaso_national_2020_weekly %>%
+  mutate(week = week - 13) %>%
+  subset(week < 13)
+
+# Cameroon ---
+
+# Data cleaning
+acled_fcv_cameroon <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Cameroon")
+
+acled_fcv_cameroon_national <- acled_fcv_cameroon %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Weekly average, 2020
+acled_fcv_cameroon_national <- acled_fcv_cameroon_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_cameroon_national_2020 <- acled_fcv_cameroon_national %>%
+  subset(year == 2020)
+
+acled_fcv_cameroon_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_cameroon_national_2020
+
+acled_fcv_cameroon_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_cameroon_national_2020_weekly
+
+acled_fcv_cameroon_national_2020_weekly <- acled_fcv_cameroon_national_2020_weekly %>%
+  mutate(dead = week >= 14) #Categorical variable
+
+# Setting week 14 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_cameroon_national_2020_weekly <- acled_fcv_cameroon_national_2020_weekly %>%
+  mutate(week = week - 14) %>%
+  subset(week < 14)
+
+# Iraq ---
+
+# Data cleaning
+acled_fcv_iraq <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Iraq")
+
+acled_fcv_iraq_national <- acled_fcv_iraq %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Weekly average, 2020
+acled_fcv_iraq_national <- acled_fcv_iraq_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_iraq_national_2020 <- acled_fcv_iraq_national %>%
+  subset(year == 2020)
+
+acled_fcv_iraq_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_iraq_national_2020
+
+acled_fcv_iraq_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_iraq_national_2020_weekly
+
+acled_fcv_iraq_national_2020_weekly <- acled_fcv_iraq_national_2020_weekly %>%
+  mutate(dead = week >= 11) #Categorical variable
+
+# Setting week 14 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_iraq_national_2020_weekly <- acled_fcv_iraq_national_2020_weekly %>%
+  mutate(week = week - 11) %>%
+  subset(week < 11)
+
+# Mozambique ---
+
+# Data cleaning
+acled_fcv_mozambique <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Mozambique")
+
+acled_fcv_mozambique_national <- acled_fcv_mozambique %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Weekly average, 2020
+acled_fcv_mozambique_national <- acled_fcv_mozambique_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_mozambique_national_2020 <- acled_fcv_mozambique_national %>%
+  subset(year == 2020)
+
+acled_fcv_mozambique_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_mozambique_national_2020
+
+acled_fcv_mozambique_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_mozambique_national_2020_weekly
+
+acled_fcv_mozambique_national_2020_weekly <- acled_fcv_mozambique_national_2020_weekly %>%
+  mutate(dead = week >= 22) #Categorical variable
+
+# Setting week 22 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_mozambique_national_2020_weekly <- acled_fcv_mozambique_national_2020_weekly %>%
+  mutate(week = week - 22) %>%
+  subset(week < 22)
+
+# Myanmar ---
+
+# Data cleaning
+acled_fcv_myanmar <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Myanmar")
+
+acled_fcv_myanmar_national <- acled_fcv_myanmar %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Weekly average, 2020
+acled_fcv_myanmar_national <- acled_fcv_myanmar_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_myanmar_national_2020 <- acled_fcv_myanmar_national %>%
+  subset(year == 2020)
+
+acled_fcv_myanmar_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_myanmar_national_2020
+
+acled_fcv_myanmar_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_myanmar_national_2020_weekly
+
+acled_fcv_myanmar_national_2020_weekly <- acled_fcv_myanmar_national_2020_weekly %>%
+  mutate(dead = week >= 14) #Categorical variable
+
+# Setting week 14 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_myanmar_national_2020_weekly <- acled_fcv_myanmar_national_2020_weekly %>%
+  mutate(week = week - 14) %>%
+  subset(week < 14)
+
+# Niger ---
+
+# Data cleaning
+acled_fcv_niger <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Niger")
+
+acled_fcv_niger_national <- acled_fcv_niger %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Weekly average, 2020
+acled_fcv_niger_national <- acled_fcv_niger_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_niger_national_2020 <- acled_fcv_niger_national %>%
+  subset(year == 2020)
+
+acled_fcv_niger_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_niger_national_2020
+
+acled_fcv_niger_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_niger_national_2020_weekly
+
+acled_fcv_niger_national_2020_weekly <- acled_fcv_niger_national_2020_weekly %>%
+  mutate(dead = week >= 13) #Categorical variable
+
+# Setting week 13 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_niger_national_2020_weekly <- acled_fcv_niger_national_2020_weekly %>%
+  mutate(week = week - 13) %>%
+  subset(week < 13)
+
+# South Sudan ---
+
+# Data cleaning
+acled_fcv_southsudan <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "South Sudan")
+
+acled_fcv_southsudan_national <- acled_fcv_southsudan %>%
+  group_by(event_date) %>%
+  mutate(incident_daily = sum(incident)) %>%
+  mutate(death_daily = sum(fatalities)) #National daily incidents and deaths
+
+# Weekly average, 2020
+acled_fcv_southsudan_national <- acled_fcv_southsudan_national %>%
+  mutate(week = week(event_date)) #Getting the number of weeks of event dates
+
+acled_fcv_southsudan_national_2020 <- acled_fcv_southsudan_national %>%
+  subset(year == 2020)
+
+acled_fcv_southsudan_national_2020 %>%
+  select(country, year, week, incident_daily, death_daily) %>%
+  distinct() -> acled_fcv_southsudan_national_2020
+
+acled_fcv_southsudan_national_2020 %>% #No replacement of missing dates
+  group_by(week) %>%
+  mutate(incident_weekly_ave = mean(incident_daily)) %>%
+  mutate(death_weekly_ave = mean(death_daily)) %>%
+  select(country, year, week, incident_weekly_ave, death_weekly_ave) %>%
+  distinct() -> acled_fcv_southsudan_national_2020_weekly
+
+acled_fcv_southsudan_national_2020_weekly <- acled_fcv_southsudan_national_2020_weekly %>%
+  mutate(dead = week >= 21) #Categorical variable
+
+# Setting week 21 (week just after the week for the date when first death d/t covid was observed) as week 0
+acled_fcv_southsudan_national_2020_weekly <- acled_fcv_southsudan_national_2020_weekly %>%
+  mutate(week = week - 21) %>%
+  subset(week < 21)
+
+# Combine datasets of all FCVs ---
+bind_rows(acled_fcv_nigeria_national_2020_weekly, acled_fcv_mali_national_2020_weekly,
+          acled_fcv_afghanistan_national_2020_weekly, acled_fcv_somalia_national_2020_weekly, 
+          acled_fcv_syria_national_2020_weekly, acled_fcv_drc_national_2020_weekly,
+          acled_fcv_yemen_national_2020_weekly, acled_fcv_burkinafaso_national_2020_weekly,
+          acled_fcv_cameroon_national_2020_weekly, acled_fcv_iraq_national_2020_weekly, 
+          acled_fcv_mozambique_national_2020_weekly, acled_fcv_myanmar_national_2020_weekly, 
+          acled_fcv_niger_national_2020_weekly, acled_fcv_southsudan_national_2020_weekly) -> acled_fcv_2020_weekly
+
+# Graph ---
+
+pdf("fragile_states.pdf", width = 10, height = 7)
+ggplot(data = acled_fcv_2020_weekly, 
+       aes(x = week, y = incident_weekly_ave, group = country, color = country, group = dead)) +
+  geom_point(size = .5, aes(color = dead)) +
+  theme_bw() +
+  facet_wrap(.~ country) +
+  theme(legend.position = "none") +
+  theme(strip.text.x = element_text(size = 7)) +
+  scale_color_grey(start = 0.5, end = 0.8) +
+  labs(x = "Week (Week 0 as the week when the first death due to COVID-19 was reported)",
+       y = "Weekly average incidents of violence against civilians") +
+  xlim(-10, 10) + ylim (0, 5) +
+  geom_vline(data = acled_fcv_2020_weekly, aes(xintercept = 0), linetype = "dotted")
+dev.off()
+```
+
+# Results
+
+## Figure: Mapping of violence against civilians (COVID)
+
+```{r Nigeria geolocations major actors 2020}
+
+# Data cleaning ---
+acled_fcv_nigeria <- acled_fcv %>% 
+  mutate(incident = 1) %>% #Incident = 1 for each row
+  subset(country == "Nigeria") %>%
+  mutate(week = week(event_date) - 13) %>% #Standardized week
+  mutate(dead = week >= 0) %>%
+  subset(week < 13) %>% #Week -12 to 12
+  subset(week > -13) %>%
+  subset(year == 2020) #Year 2020
+
+# Selecting major actors (10+ incidents post-COVID) ---
+major_actors <- c("Fulani Ethnic Militia (Nigeria)",
+                  "Islamic State (West Africa) and/or Boko Haram - Jamatu Ahli is-Sunnah lid-Dawatai wal-Jihad",
+                  "Katsina Communal Militia (Nigeria)",
+                  "Police Forces of Nigeria (2015-)",
+                  "Tiv Ethnic Militia (Nigeria)",
+                  "Military Forces of Nigeria (2015-)") #List of actors
+
+acled_fcv_nigeria_major_actors <-
+  acled_fcv_nigeria %>%
+  subset(actor1 %in% major_actors) #Subset major actors
+
+acled_fcv_nigeria_major_actors <- 
+  acled_fcv_nigeria_major_actors %>% 
+  mutate(actor1 = replace(actor1, 
+                          actor1 == "Islamic State (West Africa) and/or Boko Haram - Jamatu Ahli is-Sunnah lid-Dawatai wal-Jihad", 
+                          "IS/Boko Haram")) %>%
+  mutate(actor1 = replace(actor1, 
+                          actor1 == "Fulani Ethnic Militia (Nigeria)", 
+                          "Fulani Ethnic Militia")) %>%
+  mutate(actor1 = replace(actor1, 
+                          actor1 == "Katsina Communal Militia (Nigeria)", 
+                          "Katsina Communal Militia")) %>%
+  mutate(actor1 = replace(actor1, 
+                          actor1 == "Police Forces of Nigeria (2015-)", 
+                          "Police Forces of Nigeria")) %>%
+  mutate(actor1 = replace(actor1, 
+                          actor1 == "Tiv Ethnic Militia (Nigeria)", 
+                          "Tiv Ethnic Militia")) %>%
+  mutate(actor1 = replace(actor1, 
+                          actor1 == "Military Forces of Nigeria (2015-)", 
+                          "Military Forces of Nigeria")) #Rename
+
+# Stamen map ---
+nigeria_stm <- get_stamenmap(bbox = c(left = 2.5, bottom = 4, right = 15, top = 14),
+                             zoom = 7, source = "stamen", maptype = "terrain")
+
+ggmap(nigeria_stm) +
+  geom_point(aes(x = longitude, y = latitude, 
+                 color = dead, shape = dead),
+             size = 1.2,
+             data = acled_fcv_nigeria) +
+  scale_shape_manual(values = c(16, 17)) + #pre = circle, post = triangle
+  scale_color_manual(values = c(blueggplot, redggplot)) + #pre = navy, post = red
+  facet_wrap(. ~dead, 
+             labeller = labeller(dead = c("FALSE" = "Pre-COVID", "TRUE" = "Post-COVID"))
+             ) + 
+  theme_minimal() +
+  theme(panel.spacing = unit(1, "lines")) +
+  theme(axis.text = element_text(size = 6.5)) +
+  theme(panel.grid = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        legend.position = "none")
+
+# Save datasets for ArcGIS ---
+acled_fcv_nigeria %>%
+  filter(dead == TRUE) %>%
+  select(longitude, latitude) -> acled_post_covid
+
+write.csv(acled_post_covid, "acled_post_covid.csv")
+
+acled_fcv_nigeria %>%
+  filter(dead == FALSE) %>%
+  select(longitude, latitude) -> acled_pre_covid
+
+write.csv(acled_pre_covid, "acled_pre_covid.csv")
+
+# Maps were finalized with the ArcGIS software, using the data above
+```
+
+## Figure 9: Mapping of violence against civilians (Ebola)
+
+```{r ebola}
+
+# Data cleaning ---
+nigeria_ebola <- nigeria_ebola %>% 
+  mutate(incident = 1) %>% 
+  mutate(week = week(event_date)) %>% #Getting the number of weeks of event dates
+  select(country, year, week, actor1, admin1, latitude, longitude)
+
+# The first death d/t Ebola = August 5 2014 = Week 31 ---
+nigeria_ebola <- nigeria_ebola %>%
+  mutate(dead = week >= 31) #Categorical variable
+
+# Setting week 31 as week 0 ---
+nigeria_ebola <- nigeria_ebola %>%
+  mutate(week = week - 31) %>%
+  subset(week < 13) %>%
+  subset(week > -13)
+
+# Count the number of actors ---
+nigeria_ebola %>%
+  subset(dead == TRUE) -> post_ebola
+as.data.frame(table(post_ebola$actor1)) -> post_ebola_table
+
+nigeria_ebola %>%
+  subset(dead == FALSE) -> pre_ebola
+as.data.frame(table(pre_ebola$actor1)) -> pre_ebola_table
+
+# No significant increase ... Fulani, Katsina, Tiv
+
+# Mapping ---
+ggmap(nigeria_stm) +
+  geom_point(aes(x = longitude, y = latitude, 
+                 color = dead, shape = dead),
+             size = 1.2,
+             data = nigeria_ebola) +
+  scale_shape_manual(values = c(16, 17)) + #pre = circle, post = triangle
+  scale_color_manual(values = c(blueggplot, redggplot)) + #pre = navy, post = red
+  facet_wrap(. ~dead, 
+             labeller = labeller(dead = c("FALSE" = "Pre-Ebola", "TRUE" = "Post-Ebola"))
+             ) + 
+  theme_minimal() +
+  theme(panel.spacing = unit(1, "lines")) +
+  theme(axis.text = element_text(size = 6.5)) +
+  theme(panel.grid = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        legend.position = "none")
+
+# Save datasets for ArcGIS ---
+post_ebola %>% select(longitude, latitude) -> acled_post_ebola
+write.csv(acled_post_ebola, "acled_post_ebola.csv")
+
+pre_ebola %>% select(longitude, latitude) -> acled_pre_ebola
+write.csv(acled_pre_ebola, "acled_pre_ebola.csv")
+
+# Maps were finalized with the ArcGIS software, using the data above
+```
+
+## Case study analysis
+
+```{r}
+# Fulani ethnic militia ---
+
+# Subset Fulani, post-covid, no restriction in geolocations
+acled_fulani_post <- acled_fcv_nigeria %>%
+  filter(actor1 =="Fulani Ethnic Militia (Nigeria)") %>%
+  filter(event_date >= as.POSIXct("2020-03-23"))
+
+# Count
+as.data.frame(table(acled_fulani_post$assoc_actor_2))
+### Farmers 18, Taxi drivers 1, Women 6, Government 4, Religious group 5, Other militia 3 (incl private security force)
+### Economic 19, Unclear 6, Political 12
+
+# Katsina communal militia ---
+
+# Subset Katsina comm, post-covid
+acled_katsina_post <- acled_fcv_nigeria %>%
+  filter(actor1 =="Katsina Communal Militia (Nigeria)") %>%
+  filter(event_date >= as.POSIXct("2020-03-23"))
+
+# Count
+as.data.frame(table(acled_katsina_post$assoc_actor_2))
+### Women 3, Government 1, Other militia 1, Healthcare workers 1
+### Economic 0, Unclear 3, Political 3
+
+# Tiv ethnic militia ---
+
+# Subset Tiv, post-covid
+acled_tiv_post <- acled_fcv_nigeria %>%
+  filter(actor1 =="Tiv Ethnic Militia (Nigeria)") %>%
+  filter(event_date >= as.POSIXct("2020-03-23"))
+
+# Count
+as.data.frame(table(acled_tiv_post$assoc_actor_2)) 
+### Farmers 1, Other militia 9
+### Economic 1, Unclear 0, Political 9
+
+# Graph ---
+
+group <- c(rep("Fulani", 3))
+victim <- c("Economic", "Unclear", "Political")
+count <- c(19, 6, 12)
+data_fulani <- data.frame(group, victim, count)
+
+group <- c(rep("Katsina", 3))
+victim <- c("Economic", "Unclear", "Political")
+count <- c(0, 3, 3)
+data_katsina <- data.frame(group, victim, count)
+
+group <- c(rep("Tiv", 3))
+victim <- c("Economic", "Unclear", "Political")
+count <- c(1, 0, 9)
+data_tiv <- data.frame(group, victim, count)
+
+data_count <- bind_rows(data_katsina, data_tiv, data_fulani)
+data_count$victim <- as.factor(data_count$victim)
+data_count$victim <- ordered(data_count$victim, levels = c("Economic", "Unclear", "Political"))
+
+ggplot(data_count, aes(fill = victim, y = count, x = group)) + 
+  geom_bar(position = "fill", stat = "identity", color="black") +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_manual(values = c("steelblue1", "snow3", "royalblue4")) +
+  theme(text = element_text(size=20),
+        axis.text.x = element_text(angle=90, hjust=1)) +
+  theme(legend.position = "none",
+        panel.grid = element_blank(),
+        axis.title = element_blank(),
+        axis.text.x = element_blank()) +
+  annotate("text", x = 1, y = 0.165, label= "Political", size = 5, color = "white") +
+  annotate("text", x = 1, y = 0.405, label= "Unclear", size = 5) +
+  annotate("text", x = 1, y = 0.73, label= "Economic", size = 5)
+
+```
+
+# Appendix. Difference-in-discontinuities
+
+## Figure: Regression results
+
+```{r dif discont graph}
+# RD plot
+redggplot <- "#696969"
+blueggplot <- "#A9A9A9"
+
+# Plot
+
+plotting <- function(dataset1, dataset2, year1, year2) {
+  ggplot(data = dataset1, 
+         aes(x = week, y = incident_weekly_ave, group = dead)) +
+  geom_point(shape = 1, color = redggplot) +
+  geom_smooth(method = "lm", formula = y ~ x, color = redggplot, se = FALSE) + #2020
+  geom_point(data = dataset2, shape = 1, color = blueggplot) +
+  geom_smooth(data = dataset2, 
+              method = "lm", formula = y ~ x, color = blueggplot, se = FALSE) + #2019
+  ylim(0, 6) + xlim(-12, 12) +
+  theme_bw() + theme(legend.position = "none") +
+  xlab("Week") + ylab("Weekly average incidents") +
+  geom_vline(aes(xintercept = 0)) +
+  annotate("text", x = 9, y = 5.2, label = year1, color = redggplot, size = 4) +
+  annotate("text", x = 9, y = 2.3, label = year2, color = blueggplot, size = 4) -> plot_result
+  return(plot_result)
+}
+
+# 2020 and 2016
+pdf("2020_2016.pdf", width=10, height=7)
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2016_weekly, 2020, 2016)
+dev.off
+```
+
+## Table: Regression results
+
+```{r regression, results = "asis", echo = FALSE, out.width = "80%"}
+
+# Cleaning
+acled_fcv_nigeria_national_2016_weekly %>%
+  mutate(year = 2016) %>%
+  select(year, week, incident_weekly_ave, dead) -> nigeria_regression_2016
+
+acled_fcv_nigeria_national_2020_weekly %>%
+  select(year, week, incident_weekly_ave, dead) -> nigeria_regression_2020
+
+nigeria_regression <- rbind(acled_fcv_nigeria_national_2016_weekly, nigeria_regression_2020)
+
+# Introduce dummy variables
+nigeria_regression %>%
+  mutate(t = ifelse(year == 2020, 1, 0)) %>%
+  mutate(w_star = week) %>%
+  mutate(d = ifelse(dead == TRUE, 1, 0)) %>%
+  select(year, t, w_star, d, incident_weekly_ave) -> nigeria_regression
+
+# Regression
+fit12 <- lm(incident_weekly_ave ~ w_star + d + d * w_star + t + t * w_star + t * d + t * d * w_star,
+            data = subset(nigeria_regression, week <= 12 & week >= -12))
+fit11 <- lm(incident_weekly_ave ~ w_star + d + d * w_star + t + t * w_star + t * d + t * d * w_star,
+            data = subset(nigeria_regression, week <= 11 & week >= -11))
+fit10 <- lm(incident_weekly_ave ~ w_star + d + d * w_star + t + t * w_star + t * d + t * d * w_star,
+            data = subset(nigeria_regression, week <= 10 & week >= -10))
+
+# Plot
+stargazer(fit12, fit11, fit10, style = "apsr",
+          title = "Difference-in-discontinuities analysis",
+          column.labels = c("12 weeks", "11 weeks", "10 weeks"),
+          intercept.top = TRUE, intercept.bottom = FALSE,
+          covariate.labels = c("Constant",
+                               "$W^{*}$",
+                               "$D_{week}$",
+                               "$T_{2020}$",
+                               "$W^{*} D_{week}$",
+                               "$W^{*} T_{2020}$",
+                               "$D_{week} T_{2020}$",
+                               "$W^{*} D_{week} T_{2020}$"),
+          dep.var.labels = "Weekly average incidents of violence against civilians",
+          header = FALSE,
+          font.size = "footnotesize"
+          )
+```
+
+## Figure: McCrary test results
+
+McCrary tests are performed using rainfalls and other types of violence as variables of interest.
+
+```{r McCrary rainfall, fig.show="hold", out.width = "50%"}
+
+# Rainfall in 2020 ---
+nigeria_rainfall <- nigeria_rainfall %>%
+  mutate(week = week(date) - 13) %>%
+  subset(week <= 12 & week >= -12) %>%
+  mutate(dead = week >= 0) -> nigeria_rainfall
+
+nigeria_rainfall <- nigeria_rainfall %>%
+  mutate(rainy_day = ifelse(precipitation_mm > 0, 1, 0)) #Rainy day = 1
+
+nigeria_rainfall_analysis <- nigeria_rainfall %>%
+  select(week, rainy_day, dead) %>%
+  subset(rainy_day == 1)
+
+# Barplot
+ggplot(data = nigeria_rainfall_analysis, aes(x = week)) +
+  geom_histogram(binwidth = 1, aes(color = dead), fill = "white") + 
+  geom_vline(xintercept = 0) + 
+  labs(x = "Week (2020)", y = "Rainy days") +
+  theme_minimal() + theme(legend.position = "none") +
+  xlim(-13, 13) + ylim(0, 7) -> bar_rainfall
+
+# Density plot
+x <- nigeria_rainfall_analysis$week
+rdd <- rddensity(X = x)
+mccrary_2020 <- rdplotdensity(rdd, x, plotRange = c(-12, 12), type = "both", 
+                              lcol = c(redggplot, blueggplot), hist = FALSE, CIuniform = TRUE,
+                              xlabel = "Week (2020)", ylabel = "Density")
+
+pdf("rainfall_density.pdf", width = 10, height = 7)
+mccrary_2020
+dev.off()
+
+```
+
+Other types of violence (riots, protests, and battles):
+
+```{r}
+
+nigeria_battles <- nigeria_other_violence %>%
+  filter(event_type == "Battles") #Battles
+
+nigeria_protests <- nigeria_other_violence %>%
+  filter(event_type == "Protests") #Protests
+
+nigeria_riots <- nigeria_other_violence %>%
+  filter(event_type == "Riots") #Riots
+
+# Data cleaning (week variable)
+cleaning_other_violence <- function(dataset){
+  # Incident = 1 for each row
+  data <- dataset %>% 
+    mutate(incident = 1) 
+  # Week
+  data <- data %>%
+    mutate(week = week(event_date)) #Getting the number of weeks of event dates
+  data <- data %>%
+    mutate(dead = week >= 13) %>%
+    select(week, incident, dead) #Categorical variable
+  # Setting week 13 as week 0
+  data <- data %>%
+    mutate(week = week - 13) %>%
+    subset(week < 13)
+  return(data)
+}
+
+nigeria_battles_weekly <- cleaning_other_violence(nigeria_battles)
+nigeria_riots_weekly <- cleaning_other_violence(nigeria_riots)
+nigeria_protests_weekly <- cleaning_other_violence(nigeria_protests)
+
+# McCrary test, Battles ---
+
+ggplot(data = nigeria_battles_weekly, aes(x = week)) +
+  geom_histogram(binwidth = 1, aes(color = dead), fill = "white") + 
+  geom_vline(xintercept = 0) + 
+  labs(x = "Week (2020)", y = "Weekly incidents of battles") +
+  theme_minimal() + theme(legend.position = "none") +
+  xlim(-13, 13) + ylim(0, 30)
+
+# Density plot
+x <- nigeria_battles_weekly$week
+rdd <- rddensity(X = x)
+mccrary_battles <- rdplotdensity(rdd, x, plotRange = c(-12, 12), type = "both", 
+                                 lcol = c(redggplot, blueggplot), hist = FALSE, CIuniform = TRUE,
+                                 xlabel = "Week (2020)", ylabel = "Density")
+
+pdf("battles_density.pdf", width = 10, height = 7)
+mccrary_battles
+dev.off()
+
+# McCrary test, Riots ---
+
+ggplot(data = nigeria_riots_weekly, aes(x = week)) +
+  geom_histogram(binwidth = 1, aes(color = dead), fill = "white") + 
+  geom_vline(xintercept = 0) + 
+  labs(x = "Week (2020)", y = "Weekly incidents of riots") +
+  theme_minimal() + theme(legend.position = "none") +
+  xlim(-13, 13) + ylim(0, 30)
+
+# Density plot
+x2 <- nigeria_riots_weekly$week
+rdd <- rddensity(X = x2)
+mccrary_riots <- rdplotdensity(rdd, x2, plotRange = c(-12, 12), type = "both", 
+                               lcol = c(redggplot, blueggplot), hist = FALSE, 
+                               CIuniform = TRUE,
+                               xlabel = "Week (2020)", ylabel = "Density")
+
+pdf("riots_density.pdf", width = 10, height = 7)
+mccrary_riots
+dev.off()
+
+# McCrary test, Protests ---
+
+ggplot(data = nigeria_protests_weekly, aes(x = week)) +
+  geom_histogram(binwidth = 1, aes(color = dead), fill = "white") + 
+  geom_vline(xintercept = 0) + 
+  labs(x = "Week (2020)", y = "Weekly incidents of protests") +
+  theme_minimal() + theme(legend.position = "none") +
+  xlim(-13, 13) + ylim(0, 30)
+
+# Density plot
+x3 <- nigeria_protests_weekly$week
+rdd <- rddensity(X = x3)
+mccrary_protests <- rdplotdensity(rdd, x3, plotRange = c(-12, 12), type = "both", 
+                                  lcol = c(redggplot, blueggplot), hist = FALSE, CIuniform = TRUE,
+                                  xlabel = "Week (2020)", ylabel = "Density")
+
+pdf("protests_density.pdf", width = 10, height = 7)
+mccrary_protests
+dev.off()
+```
+
+## Figure: Trends of other years
+
+```{r appendix trend, results = "asis", echo = FALSE, out.width = "50%"}
+
+# Trends of all years 2000-2019
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2019_weekly, 2020, 2019) -> plot_2019
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2018_weekly, 2020, 2018) -> plot_2018
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2017_weekly, 2020, 2017) -> plot_2017
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2016_weekly, 2020, 2016) -> plot_2016
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2015_weekly, 2020, 2015) -> plot_2015
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2014_weekly, 2020, 2014) -> plot_2014
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2013_weekly, 2020, 2013) -> plot_2013
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2012_weekly, 2020, 2012) -> plot_2012
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2011_weekly, 2020, 2011) -> plot_2011
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2010_weekly, 2020, 2010) -> plot_2010
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2009_weekly, 2020, 2009) -> plot_2009
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2008_weekly, 2020, 2008) -> plot_2008
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2007_weekly, 2020, 2007) -> plot_2007
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2006_weekly, 2020, 2006) -> plot_2006
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2005_weekly, 2020, 2005) -> plot_2005
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2004_weekly, 2020, 2004) -> plot_2004
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2003_weekly, 2020, 2003) -> plot_2003
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2002_weekly, 2020, 2002) -> plot_2002
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2001_weekly, 2020, 2001) -> plot_2001
+plotting(acled_fcv_nigeria_national_2020_weekly, 
+         acled_fcv_nigeria_national_2000_weekly, 2020, 2000) -> plot_2000
+
+plots_2019_2000 <- 
+  grid.arrange(plot_2019, plot_2018, plot_2017, plot_2016, plot_2015, 
+               plot_2014, plot_2013, plot_2012, plot_2011, plot_2010, 
+               plot_2009, plot_2008, plot_2007, plot_2006, plot_2005, 
+               plot_2004, plot_2003, plot_2002, plot_2001, plot_2000,
+               ncol = 4)
+
+ggsave(file = "plots_2019_2000.pdf", plots_2019_2000, width = 10, height = 12)
+
+```
+
+## Figure: Permutation test results
+
+```{r appendix permutation, results = "asis", echo = FALSE, out.width = "80%"}
+
+# Calculating coefficients
+beta_coef <- function(dataframe, year_id, range){
+  # Cleaning
+  dataframe %>%
+    mutate(year = year) %>%
+    select(year, week, incident_weekly_ave, dead) -> dataframe_regression
+  
+  acled_fcv_nigeria_national_2020_weekly %>%
+    select(year, week, incident_weekly_ave, dead) -> nigeria_regression_2020
+  
+  nigeria_regression <- rbind(dataframe_regression, nigeria_regression_2020)
+  
+  # Introduce dummy variables
+  nigeria_regression %>%
+    mutate(t = ifelse(year == 2020, 1, 0)) %>%
+    mutate(w_star = week) %>%
+    mutate(d = ifelse(dead == TRUE, 1, 0)) %>%
+    select(year, t, w_star, d, incident_weekly_ave) -> nigeria_regression
+  
+  # Regression
+  fit <- lm(incident_weekly_ave ~ w_star + d + d * w_star + t + t * w_star + t * d + t * d * w_star,
+            data = subset(nigeria_regression, week <= range & week >= -range))
+  
+  # Extract upper/lower boundaries
+  return(tibble(year = year_id, 
+                upper = confint(fit)["d:t", 2],
+                point_est = as.numeric(fit$coefficients["d:t"]),
+                lower = confint(fit)["d:t", 1]))
+}
+
+i <- 12 #range (bandwidth)
+
+# Note: Parallel trends are confirmed for years 2017, 2016, 2011, 2007, 2005, 2001
+
+# Coefficients
+beta_coef_2019 <- beta_coef(acled_fcv_nigeria_national_2019_weekly, 2019, i)
+beta_coef_2018 <- beta_coef(acled_fcv_nigeria_national_2018_weekly, 2018, i)
+beta_coef_2017 <- beta_coef(acled_fcv_nigeria_national_2017_weekly, 2017, i)
+beta_coef_2016 <- beta_coef(acled_fcv_nigeria_national_2016_weekly, 2016, i)
+beta_coef_2015 <- beta_coef(acled_fcv_nigeria_national_2015_weekly, 2015, i)
+beta_coef_2014 <- beta_coef(acled_fcv_nigeria_national_2014_weekly, 2014, i)
+beta_coef_2013 <- beta_coef(acled_fcv_nigeria_national_2013_weekly, 2013, i)
+beta_coef_2012 <- beta_coef(acled_fcv_nigeria_national_2012_weekly, 2012, i)
+beta_coef_2011 <- beta_coef(acled_fcv_nigeria_national_2011_weekly, 2011, i)
+beta_coef_2010 <- beta_coef(acled_fcv_nigeria_national_2010_weekly, 2010, i)
+beta_coef_2009 <- beta_coef(acled_fcv_nigeria_national_2009_weekly, 2009, i)
+beta_coef_2008 <- beta_coef(acled_fcv_nigeria_national_2008_weekly, 2008, i)
+beta_coef_2007 <- beta_coef(acled_fcv_nigeria_national_2007_weekly, 2007, i)
+beta_coef_2006 <- beta_coef(acled_fcv_nigeria_national_2006_weekly, 2006, i)
+beta_coef_2005 <- beta_coef(acled_fcv_nigeria_national_2005_weekly, 2005, i)
+beta_coef_2004 <- beta_coef(acled_fcv_nigeria_national_2004_weekly, 2004, i)
+beta_coef_2003 <- beta_coef(acled_fcv_nigeria_national_2003_weekly, 2003, i)
+beta_coef_2002 <- beta_coef(acled_fcv_nigeria_national_2002_weekly, 2002, i)
+beta_coef_2001 <- beta_coef(acled_fcv_nigeria_national_2001_weekly, 2001, i)
+beta_coef_2000 <- beta_coef(acled_fcv_nigeria_national_2000_weekly, 2000, i)
+
+beta_coef_results <- rbind(beta_coef_2019, beta_coef_2018, beta_coef_2017,
+                           beta_coef_2016, beta_coef_2015, beta_coef_2014,
+                           beta_coef_2013, beta_coef_2012, beta_coef_2011,
+                           beta_coef_2010, beta_coef_2009, beta_coef_2008,
+                           beta_coef_2007, beta_coef_2006, beta_coef_2005,
+                           beta_coef_2004, beta_coef_2003, beta_coef_2002,
+                           beta_coef_2001, beta_coef_2000)
+
+pdf("permutation.pdf", width = 10, height = 7)
+ggplot(beta_coef_results, aes(x = year, y = point_est)) +
+  geom_point(color = "black") +
+  geom_point(data = beta_coef_results[c(3, 4, 9, 13, 15, 19), ], color = "red") +
+  geom_errorbar(aes(ymax = upper, ymin = lower), color = "black") +
+  geom_errorbar(data = beta_coef_results[c(3, 4, 9, 13, 15, 19), ], 
+                aes(ymax = upper, ymin = lower), color = "red") +
+  labs(x = "Comparison", y = "Magnitude of the effects") +
+  theme_bw() +
+  geom_hline(yintercept = 0, linetype = "dotted")
+dev.off()
+
+```
